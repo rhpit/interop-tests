@@ -1,0 +1,37 @@
+---
+- name: Execute MTA Tests
+  hosts: localhost
+
+  tasks:
+    - name: Make sure docker.sock has right privs
+      ansible.builtin.file:
+        path: /var/run/docker.sock
+        mode: 0666
+      become: true
+
+    - name: Read env.yaml to get mta config information
+      ansible.builtin.slurp:
+        src: "/home/cloud-user/integration_tests/mta/conf/env.yaml"
+      register: mta_config_raw
+
+    - name: Convert env.yml to a dictionary
+      ansible.builtin.set_fact:
+        mta_config: "{{ mta_config_raw['content'] | b64decode | from_yaml }}"
+
+    - name: Get mta hostname from mta-config
+      ansible.builtin.set_fact:
+        ocp_hostname: "{{ mta_config['application']['ocphostname'] }}"
+        ocp_securehostname: "{{ mta_config['application']['ocpsecurehostname'] }}"
+
+    - name: Execute tests
+      ansible.builtin.shell: |
+        source /home/cloud-user/.env_mta/bin/activate
+        cd /home/cloud-user/integration_tests
+        mta selenium start > selenium_start.log
+        sleep 100
+        mta conf local-env --ftp-host rhev-node-09.rdu2.scalelab.redhat.com --ftp-username ftpuser --ftp-password ftpuser --ocphostname {{ ocp_hostname }} \
+        --ocpsecurehostname {{ ocp_securehostname }}
+        pytest mta/tests/operator/test_operator_test_cases.py -vv --reruns 4 --reruns-delay 10 \
+        --junitxml=/home/cloud-user/integration_tests/xunit_output.xml > test_output.log
+      register: result
+      changed_when: result.rc == 0

@@ -1,0 +1,206 @@
+---
+- name: Install the mta operator
+  hosts: localhost
+
+  tasks:
+    - name: Install git
+      ansible.builtin.package:
+        name:
+          - git
+          - gcc
+        state: latest
+      become: true
+
+    - name: Install pip packages
+      ansible.builtin.pip:
+        name:
+          - pytest
+          - kubernetes
+        extra_args: --user
+
+    - name: Create the mta namespace
+      community.okd.k8s:
+        state: present
+        api_version: v1
+        kind: Namespace
+        name: mta
+
+    - name: Create the mta group
+      community.okd.k8s:
+        state: present
+        definition:
+          kind: OperatorGroup
+          apiVersion: operators.coreos.com/v1
+          metadata:
+            name: mta-operatorgroup
+            namespace: mta
+          spec:
+            targetNamespaces:
+              - mta
+
+    - name: Get the default channel
+      kubernetes.core.k8s_info:
+        api_version: packages.operators.coreos.com/v1
+        kind: PackageManifest
+        field_selectors:
+          - metadata.name=mta-operator
+      register: __default_channel
+
+    - name: Install the MTA operator
+      community.okd.k8s:
+        state: present
+        definition:
+          kind: Subscription
+          apiVersion: operators.coreos.com/v1alpha1
+          metadata:
+            name: mta-operator
+            namespace: mta
+          spec:
+            name: mta-operator
+            source: community-operators
+            sourceNamespace: openshift-marketplace
+            channel: "{{ channel | default('alpha', true) }}"
+            installPlanApproval: Automatic
+      vars:
+        channel: "{{ __default_channel.resources[0].status.defaultChannel }}"
+
+    - name: Get the updated Subscription object
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        namespace: mta
+        name: mta-operator
+      register: __operator_subscription
+      retries: 10
+      delay: 30
+      until:
+        - __operator_subscription.resources[0].status.currentCSV is defined
+
+    - name: Wait until the ClusterServiceVersion reports Succeeded phase
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: mta
+        name: "{{ __operator_subscription.resources[0].status.currentCSV }}"
+      register: __current_csv
+      retries: 10
+      delay: 30
+      until:
+        - __current_csv.resources | length > 0
+        - __current_csv.resources[0].status.phase == "Succeeded"
+
+    - name: Deploy the windup
+      community.okd.k8s:
+        state: present
+        definition:
+          kind: Windup
+          apiVersion: windup.jboss.org/v1
+          metadata:
+            name: mta
+            namespace: mta
+          spec:
+            mta_Volume_Capacity: "5Gi"
+            volumeCapacity: "5Gi"
+
+    - name: Download the test repo
+      ansible.builtin.git:
+        repo: https://github.com/windup/windup_integration_test.git
+        dest: /home/cloud-user/integration_tests
+        version: main
+
+    - name: Install python3.8
+      ansible.builtin.dnf:
+        name:
+          - python38
+        state: latest
+      become: true
+
+    - name: Create a virtual env to install tests to
+      ansible.builtin.command:
+        cmd: python3.8 -m venv .env_mta
+        creates: "/home/cloud-user/.env_mta"
+
+    - name: Upgrade pip
+      ansible.builtin.pip:
+        name: pip
+        virtualenv: /home/cloud-user/.env_mta
+        extra_args: --upgrade
+
+    - name: install module importscan
+      ansible.builtin.pip:
+        name: importscan
+        virtualenv: /home/cloud-user/.env_mta
+
+    - name: Install tests from repo
+      ansible.builtin.pip:
+        name: /home/cloud-user/integration_tests
+        virtualenv: /home/cloud-user/.env_mta
+        editable: true
+
+    - name: Add docker repo
+      ansible.builtin.command:
+        cmd: dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
+      become: true
+      register: result
+      changed_when: result.rc == 0
+
+    - name: Make sure public GPG key is installed
+      ansible.builtin.rpm_key:
+        state: present
+        key: /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+      become: true
+
+    - name: Clear the cache and make sure repos are updated
+      ansible.builtin.command:
+        cmd: dnf clean all
+      register: result
+      changed_when: result.rc == 0
+
+    - name: Install docker
+      ansible.builtin.dnf:
+        name: docker-ce
+        state: present
+        allowerasing: true
+      become: true
+
+    - name: Start docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+      become: true
+
+    - name: Install google chrome
+      ansible.builtin.dnf:
+        name: 'https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm'
+        state: present
+        disable_gpg_check: true
+      become: true
+
+    - name: Get the console route
+      community.okd.k8s:
+        api_version: route.openshift.io/v1
+        kind: Route
+        name: console
+        namespace: openshift-console
+      register: __console_route
+
+    - name: Update the config file
+      block:
+        - name: Update env.yml to include the mta URL
+          ansible.builtin.lineinfile:
+            path: /home/cloud-user/integration_tests/mta/conf/env.yaml
+            regexp: '^  ocphostname:'
+            line: "  ocphostname: http://mta-mta.{{ apps_url }}"
+
+        - name: Update env.yml to include the secure mta URL
+          ansible.builtin.lineinfile:
+            path: /home/cloud-user/integration_tests/mta/conf/env.yaml
+            regexp: '^  ocpsecurehostname:'
+            line: "  ocpsecurehostname: https://secure-mta-mta.{{ apps_url }}"
+      vars:
+        apps_url: "{{ __console_route.result.spec.host | replace('console-openshift-console.', '') }}"
+
+    - name: Pause for a few minutes to give the windup time to finish deployment
+      ansible.builtin.pause:
+        minutes: 5
