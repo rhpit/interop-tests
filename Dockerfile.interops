@@ -4,24 +4,24 @@
 FROM quay.io/vboulos/acmqe-automation/centos8-nodejs12
 
 # Copy the CLC repo repo into /tmp/clc folder
-#RUN mkdir /tmp/clc
-#WORKDIR /tmp/clc
-#COPY . .
+RUN mkdir /tmp/clc
+WORKDIR /tmp/clc
+COPY . .
 
 # Install node packages and update browsers list
-RUN npm config set unsafe-perm true \
-    && npm config set loglevel warn \
-    && npm install \
-    && npm ci \
-    && npx browserslist@latest --update-db
+#RUN npm config set unsafe-perm true \
+#    && npm config set loglevel warn \
+#    && npm install \
+#    && npm ci \
+#    && npx browserslist@latest --update-db
 
-RUN echo  "node version:    $(node -v) \n" \
-    "npm version:     $(npm -v) \n" \
-    "user:            $(whoami) \n" \
-    "chrome:          $(google-chrome --version || true) \n" \
-    "firefox:         $(firefox --version || true) \n"    
+#RUN echo  "node version:    $(node -v) \n" \
+#    "npm version:     $(npm -v) \n" \
+#    "user:            $(whoami) \n" \
+#    "chrome:          $(google-chrome --version || true) \n" \
+#    "firefox:         $(firefox --version || true) \n"    
 
 # good colors for most applications
-ENV TERM=xterm
+#ENV TERM=xterm
 
 CMD ["/bin/bash"]
