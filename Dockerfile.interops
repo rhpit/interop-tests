@@ -1,7 +1,7 @@
 # Command to build this Dockerfile
 # docker build -f Dockerfile -t quay.io/dhuynh/acmqe-automation/clc:clc-centos8-nodejs12 .
 
-FROM quay.io/vboulos/acmqe-automation/centos8-nodejs12
+FROM registry.fedoraproject.org/fedora-minimal:30
 
 # Copy the CLC repo repo into /tmp/clc folder
 RUN mkdir /tmp/clc
