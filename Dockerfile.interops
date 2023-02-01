@@ -24,4 +24,4 @@ COPY . .
 # good colors for most applications
 #ENV TERM=xterm
 
-CMD ["/bin/bash"]
+ENTRYPOINT ["tail", "-f", "/dev/null"]
