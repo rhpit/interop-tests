@@ -1,15 +1,6 @@
 # See the OWNERS docs: https://git.k8s.io/community/contributors/guide/owners.md
 
 approvers:
-  - ascerra
-  - minlei98
-  - ryankwilliams
-  - vi-patel
-  - madunn
-options: {}
+  - cspi-qe-ocp-lp
 reviewers:
-  - ascerra
-  - minlei98
-  - ryankwilliams
-  - vi-patel
-  - madunn
+  - cspi-qe-ocp-lp
