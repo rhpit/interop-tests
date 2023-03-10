@@ -1,31 +1,42 @@
 # Command to build this Dockerfile
 # docker build -f Dockerfile -t quay.io/dhuynh/acmqe-automation/clc:clc-centos8-nodejs12 .
 
-FROM registry.fedoraproject.org/fedora-minimal:30
+FROM quay.io/vboulos/acmqe-automation/centos8-nodejs12
 
 # Copy the CLC repo repo into /tmp/clc folder
 RUN mkdir /tmp/clc
 WORKDIR /tmp/clc
 COPY . .
 
-# Set required permissions for OpenShift usage
-RUN chgrp -R 0 /tmp/clc && \
-    chmod -R g=u /tmp/clc
+# point Cypress at the /tmp/cache no matter what user account is used
+# see https://on.cypress.io/caching
+ENV CYPRESS_CACHE_FOLDER=/tmp/.cache/Cypress
 
 # Install node packages and update browsers list
-#RUN npm config set unsafe-perm true \
-#    && npm config set loglevel warn \
-#    && npm install \
-#    && npm ci \
-#    && npx browserslist@latest --update-db
+RUN npm config set unsafe-perm true \
+    && npm config set loglevel warn \
+    && npm install -g\
+    && npm ci \
+    && npx browserslist@latest --update-db
 
-#RUN echo  "node version:    $(node -v) \n" \
-#    "npm version:     $(npm -v) \n" \
-#    "user:            $(whoami) \n" \
-#    "chrome:          $(google-chrome --version || true) \n" \
-#    "firefox:         $(firefox --version || true) \n"    
+RUN npx cypress cache path
+RUN npx cypress cache list
+
+RUN echo  "node version:    $(node -v) \n" \
+    "npm version:     $(npm -v) \n" \
+    "user:            $(whoami) \n" \
+    "chrome:          $(google-chrome --version || true) \n" \
+    "firefox:         $(firefox --version || true) \n"    
+
+# Set required permissions for OpenShift usage
+RUN chgrp -R 0 /tmp && \
+    chmod -R g=u /tmp
+
+RUN mkdir -p /.config
+RUN chgrp -R 0 /.config && \
+    chmod -R g=u /.config
 
 # good colors for most applications
-#ENV TERM=xterm
+ENV TERM=xterm
 
-ENTRYPOINT ["tail", "-f", "/dev/null"]
+CMD ["/bin/bash"]
